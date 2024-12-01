@@ -1,0 +1,18 @@
+import
+{
+    "std";
+    "rnet";
+    "tcp_client";
+}
+
+main :: fn (args: u8&&, arg_count: usize) -> u8
+{
+    if (tcp_client_setup())
+    {
+        tcp_client_run();
+        tcp_client_cleanup();
+    }
+
+    return 0;
+}
+

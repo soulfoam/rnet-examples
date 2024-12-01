@@ -1,0 +1,18 @@
+import
+{
+    "std";
+    "rnet";
+    "udp_server";
+}
+
+main :: fn (args: u8&&, arg_count: usize) -> u8
+{
+    if (udp_server_setup())
+    {
+        udp_server_run();
+        udp_server_cleanup();
+    }
+
+    return 0;
+}
+

@@ -1,0 +1,14 @@
+targets =
+[
+    default =
+    [
+        output = "tcp_client_ssl",
+        libraries =
+        [
+            "git https://github.com/soulfoam/std",
+            "git https://github.com/soulfoam/rnet openssl",
+        ]
+    ],
+
+
+],

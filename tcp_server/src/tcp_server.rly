@@ -1,0 +1,166 @@
+export
+{
+    tcp_server         :: struct;
+    tcp_server_setup   :: fn () -> bool;
+    tcp_server_cleanup :: fn ();
+    tcp_server_run     :: fn ();
+}
+
+import
+{
+    "std";
+    "rnet";
+}
+
+MAX_CONNECTIONS :: define usize = 8192;
+MAX_WRITES      :: define usize = 8192*1;
+
+// MAX_WRITES is the number of total writes that can be out at any given time when calling `rnet_tcp_write` or `rnet_udp_send`
+// so having 8192*1 means each connection can call `rnet_tcp_write` one time before the on_write callback returns finished == true thus freeing up a slot
+
+tcp_server :: struct
+{
+    listener    : rnet_tcp&;
+    connections : tcp_server_connection[MAX_CONNECTIONS];
+}
+
+tcp_server_connection :: struct
+{
+    read_buffer : u8[4096];
+}
+
+server: tcp_server;
+
+tcp_server_setup :: fn () -> bool
+{
+    err: rnet_error = setup();
+    if (err != RNET_OK && err != RNET_ERROR_SETUP) 
+    {
+        tcp_server_cleanup();
+    }
+
+    return err == RNET_OK;
+}
+
+setup :: fn () -> rnet_error
+{
+    options: rnet_options =
+    {
+        max_sockets         = MAX_CONNECTIONS,
+        max_writes_in_queue = MAX_WRITES,
+        user_data           = NULL,
+
+        mem_alloc_fn        = NULL,
+        mem_dealloc_fn      = NULL,
+        mem_user_data       = NULL,
+    };
+
+    err: rnet_error;
+
+    err = rnet_setup(options&);
+    if (err != RNET_OK)
+    {
+        std_io_println("failed to setup - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    err = rnet_tcp_create(server.listener&, listener_on_error&);
+    if (err != RNET_OK) 
+    {
+        std_io_println("failed to create listener socket - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    err = rnet_tcp_bind_and_listen(server.listener, rnet_address_create_ipv4("0.0.0.0", 8080), 128, listener_on_accept&);
+    if (err != RNET_OK)
+    {
+        std_io_println("failed to bind or listen - {}", rnet_error_as_string(err));
+        return err;
+    }
+ 
+    return RNET_OK;
+}
+
+tcp_server_run :: fn ()
+{
+    err: rnet_error;
+    while (true)
+    {
+        err = rnet_poll_until_event();
+        if (err != RNET_OK)
+        {
+            std_io_println("failed to poll - {}", rnet_error_as_string(err));
+            return;
+        }
+    }
+}
+
+tcp_server_cleanup :: fn ()
+{
+    rnet_cleanup();
+}
+
+// we have a max number of connections, so we simply align the 2 arrays up for our own connection metadata
+get_connection :: fn (tcp: rnet_tcp&) -> tcp_server_connection&
+{
+    return server.connections[rnet_tcp_get_index(tcp)]&;
+}
+
+listener_on_error :: fn (tcp: rnet_tcp&, err: rnet_error)
+{
+    if (err == RNET_ERROR_TCP_CLOSED)
+    {
+        std_io_println("tcp closed");
+        rnet_tcp_destroy(tcp);
+    }
+    else
+    {
+        std_io_println("tcp error - {}", rnet_error_as_string(err));
+    }
+}
+
+listener_on_accept :: fn (tcp: rnet_tcp&)
+{
+    con: tcp_server_connection& = get_connection(tcp);
+    rnet_tcp_accept(tcp, connection_on_error&, con.read_buffer, size_of(con.read_buffer), connection_on_read&);
+
+    addr: rnet_address& = rnet_tcp_get_address(tcp);
+    buf: u8[RNET_IPV4_STRING_SIZE];
+    std_io_println("accepted connection from {}:{}", rnet_address_get_ipv4_as_string(addr, buf), rnet_address_get_port(addr));
+
+    msg: string = "hello from server";
+    rnet_tcp_write(tcp, msg.data, msg.size, connection_on_write&);
+}
+
+connection_on_error :: fn (tcp: rnet_tcp&, err: rnet_error)
+{
+    if (err == RNET_ERROR_TCP_CLOSED)
+    {
+        std_io_println("tcp closed");
+        rnet_tcp_destroy(tcp);
+    }
+    else
+    {
+        std_io_println("tcp error - {}", rnet_error_as_string(err));
+    }
+}
+
+connection_on_read :: fn (tcp: rnet_tcp&)
+{
+    addr: rnet_address& = rnet_tcp_get_address(tcp);
+    buf: u8[RNET_IPV4_STRING_SIZE];
+    std_io_println("{}:{}: {}", rnet_address_get_ipv4_as_string(addr, buf), rnet_address_get_port(addr), rnet_tcp_get_read_buffer_as_string(tcp)); 
+
+    rnet_tcp_clear_read_buffer(tcp); // you must clear the read buffer manually
+}
+
+connection_on_write :: fn (tcp: rnet_tcp&, is_finished: bool)
+{
+    if (is_finished)
+    {
+        bytes_written: usize; 
+        rnet_tcp_get_current_write(tcp, NULL, NULL, bytes_written&);
+        std_io_println("finished writing {} bytes", bytes_written);
+    }
+}
+

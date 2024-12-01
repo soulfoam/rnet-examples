@@ -1,0 +1,18 @@
+import
+{
+    "std";
+    "rnet";
+    "tcp_server_ssl";
+}
+
+main :: fn (args: u8&&, arg_count: usize) -> u8
+{
+    if (tcp_server_ssl_setup())
+    {
+        tcp_server_ssl_run();
+        tcp_server_ssl_cleanup();
+    }
+
+    return 0;
+}
+

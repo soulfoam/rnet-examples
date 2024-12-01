@@ -1,0 +1,139 @@
+export
+{
+    tcp_client_ssl         :: struct;
+    tcp_client_ssl_setup   :: fn () -> bool;
+    tcp_client_ssl_cleanup :: fn ();
+    tcp_client_ssl_run     :: fn ();
+}
+
+import
+{
+    "std";
+    "rnet";
+}
+
+tcp_client_ssl :: struct
+{
+    tcp         : rnet_tcp&;
+    read_buffer : u8[4096];
+    ssl_ctx     : rnet_ssl_context&;
+}
+
+client: tcp_client_ssl;
+
+tcp_client_ssl_setup :: fn () -> bool
+{
+    err: rnet_error = setup();
+    if (err != RNET_OK && err != RNET_ERROR_SETUP) 
+    {
+        tcp_client_ssl_cleanup();
+    }
+
+    return err == RNET_OK;
+}
+
+setup :: fn () -> rnet_error
+{
+    options: rnet_options =
+    {
+        max_sockets         = 1,
+        max_writes_in_queue = 16,
+        user_data           = NULL,
+
+        mem_alloc_fn        = NULL,
+        mem_dealloc_fn      = NULL,
+        mem_user_data       = NULL,
+    };
+
+    err: rnet_error;
+
+    err = rnet_setup(options&);
+    if (err != RNET_OK)
+    {
+        std_io_println("failed to setup - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    err = rnet_tcp_create(client.tcp&, on_error&);
+    if (err != RNET_OK) 
+    {
+        std_io_println("failed to create tcp socket - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    err = rnet_ssl_context_create_client(client.ssl_ctx&);
+    if (err != RNET_OK) 
+    {
+        std_io_println("failed to create ssl client context - {}", rnet_error_as_string(err));
+        rnet_ssl_print_errors_into_stderr();
+        return err;
+    }
+    
+    rnet_tcp_connect_ssl(client.tcp, client.ssl_ctx, rnet_address_create_ipv4("127.0.0.1", 8081), client.read_buffer, size_of(client.read_buffer), on_read&, on_connect&);
+    
+    return RNET_OK;
+}
+
+tcp_client_ssl_run :: fn ()
+{
+    err: rnet_error;
+    while (true)
+    {
+        err = rnet_poll_until_event();
+        if (err != RNET_OK)
+        {
+            std_io_println("failed to poll - {}", rnet_error_as_string(err));
+            return;
+        }
+    }
+}
+
+tcp_client_ssl_cleanup :: fn ()
+{
+    // rnet can automatically cleanup tcp/udp sockets for you but not SSL contexts
+    if (client.ssl_ctx != NULL) rnet_ssl_context_destroy(client.ssl_ctx);
+    rnet_cleanup();
+}
+
+on_error :: fn (tcp: rnet_tcp&, err: rnet_error)
+{
+    if (err == RNET_ERROR_TCP_CLOSED)
+    {
+        std_io_println("tcp closed");
+        rnet_tcp_destroy(tcp);
+    }
+    else
+    {
+        std_io_println("tcp error - {}", rnet_error_as_string(err));
+    }
+}
+
+on_connect :: fn (tcp: rnet_tcp&)
+{
+    addr: rnet_address& = rnet_tcp_get_address(tcp);
+    buf: u8[RNET_IPV4_STRING_SIZE];
+    std_io_println("connected to {}:{}", rnet_address_get_ipv4_as_string(addr, buf), rnet_address_get_port(addr));
+
+    msg: string = "hello from client";
+    rnet_tcp_write(tcp, msg.data, msg.size, on_write&);
+}
+
+on_read :: fn (tcp: rnet_tcp&)
+{
+    addr: rnet_address& = rnet_tcp_get_address(tcp);
+    buf: u8[RNET_IPV4_STRING_SIZE];
+    std_io_println("{}:{}: {}", rnet_address_get_ipv4_as_string(addr, buf), rnet_address_get_port(addr), rnet_tcp_get_read_buffer_as_string(tcp));
+
+    rnet_tcp_clear_read_buffer(tcp); // you must clear the read buffer manually
+}
+
+on_write :: fn (tcp: rnet_tcp&, is_finished: bool)
+{
+    if (is_finished)
+    {
+        bytes_written: usize; 
+        rnet_tcp_get_current_write(tcp, NULL, NULL, bytes_written&);
+        std_io_println("finished writing {} bytes", bytes_written);
+    }
+}
+

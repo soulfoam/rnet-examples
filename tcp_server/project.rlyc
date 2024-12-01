@@ -1,0 +1,13 @@
+targets =
+[
+    default =
+    [
+        output = "tcp_server",
+        libraries =
+        [
+            "git https://github.com/soulfoam/std",
+            "git https://github.com/soulfoam/rnet",
+        ]
+    ],
+
+],

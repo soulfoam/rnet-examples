@@ -1,0 +1,115 @@
+export
+{
+    udp_server         :: struct;
+    udp_server_setup   :: fn () -> bool;
+    udp_server_cleanup :: fn ();
+    udp_server_run     :: fn ();
+}
+
+import
+{
+    "std";
+    "rnet";
+}
+
+udp_server :: struct
+{
+    udp         : rnet_udp&;
+    read_buffer : u8[U16_MAX_VALUE];
+}
+
+server: udp_server;
+
+udp_server_setup :: fn () -> bool
+{
+    err: rnet_error = setup();
+    if (err != RNET_OK && err != RNET_ERROR_SETUP) 
+    {
+        udp_server_cleanup();
+    }
+
+    return err == RNET_OK;
+}
+
+setup :: fn () -> rnet_error
+{
+    options: rnet_options =
+    {
+        max_sockets         = 1,
+        max_writes_in_queue = 16,
+        user_data           = NULL,
+
+        mem_alloc_fn        = NULL,
+        mem_dealloc_fn      = NULL,
+        mem_user_data       = NULL,
+    };
+
+    err: rnet_error;
+
+    err = rnet_setup(options&);
+    if (err != RNET_OK)
+    {
+        std_io_println("failed to setup - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    err = rnet_udp_create(server.udp&, on_error&);
+    if (err != RNET_OK) 
+    {
+        std_io_println("failed to create udp socket - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    rnet_udp_set_recv(server.udp, server.read_buffer, size_of(server.read_buffer), on_recv&);
+
+    err = rnet_udp_bind(server.udp, rnet_address_create_ipv4("0.0.0.0", 7005));
+    if (err != RNET_OK) 
+    {
+        std_io_println("failed to bind udp socket - {}", rnet_error_as_string(err));
+        return err;
+    }
+
+    return RNET_OK;
+}
+
+udp_server_run :: fn ()
+{
+    err: rnet_error;
+    while (true)
+    {
+        err = rnet_poll_until_event();
+        if (err != RNET_OK)
+        {
+            std_io_println("failed to poll - {}", rnet_error_as_string(err));
+            return;
+        }
+    }
+}
+
+udp_server_cleanup :: fn ()
+{
+    rnet_cleanup();
+}
+
+on_error :: fn (udp: rnet_udp&, err: rnet_error)
+{
+    std_io_println("udp error - {}", rnet_error_as_string(err));
+    rnet_udp_destroy(udp);
+}
+
+on_recv :: fn (udp: rnet_udp&, from_address: rnet_address, buffer: void&, buffer_size: usize)
+{
+    buf: u8[RNET_IPV4_STRING_SIZE];
+    std_io_println("{}:{}: {}", rnet_address_get_ipv4_as_string(from_address&, buf), rnet_address_get_port(from_address&), string{buffer, buffer_size});
+
+    msg: string = "hello from server";
+    rnet_udp_send(server.udp, from_address, msg.data, msg.size, on_sent&);
+ 
+}
+
+on_sent :: fn (udp: rnet_udp&, to_address: rnet_address, buffer: void&, buffer_size: usize)
+{
+    buf: u8[RNET_IPV4_STRING_SIZE];
+    std_io_println("sent `{}` to {}:{}", string{buffer, buffer_size}, rnet_address_get_ipv4_as_string(to_address&, buf), rnet_address_get_port(to_address&));
+}
+
