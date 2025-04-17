@@ -38,11 +38,6 @@ setup :: fn () -> rnet_error
     {
         max_sockets         = 1,
         max_writes_in_queue = 16,
-        user_data           = NULL,
-
-        mem_alloc_fn        = NULL,
-        mem_dealloc_fn      = NULL,
-        mem_user_data       = NULL,
     };
 
     err: rnet_error;

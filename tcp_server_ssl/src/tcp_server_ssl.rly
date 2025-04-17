@@ -12,8 +12,8 @@ import
     "rnet";
 }
 
-MAX_CONNECTIONS :: define usize = 8192;
-MAX_WRITES      :: define usize = 8192*1;
+MAX_CONNECTIONS :: define u32 = 8192;
+MAX_WRITES      :: define u64 = 8192*1;
 
 // MAX_WRITES is the number of total writes that can be out at any given time when calling `rnet_tcp_write` or `rnet_udp_send`
 // so having 8192*1 means each connection can call `rnet_tcp_write` one time before the on_write callback returns finished == true thus freeing up a slot
@@ -49,11 +49,6 @@ setup :: fn () -> rnet_error
     {
         max_sockets         = MAX_CONNECTIONS,
         max_writes_in_queue = MAX_WRITES,
-        user_data           = NULL,
-
-        mem_alloc_fn        = NULL,
-        mem_dealloc_fn      = NULL,
-        mem_user_data       = NULL,
     };
     
     err: rnet_error;
